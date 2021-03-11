@@ -175,12 +175,15 @@ mod native_loader {
 mod wasm_loader {
     use std::io::Read;
 
-    use futures_channel::oneshot;
+    use futures::StreamExt;
+    use futures_channel::{mpsc, oneshot};
     use instant::Instant;
-    use wasm_bindgen::JsCast;
+    use wasm_bindgen::{JsCast, UnwrapThrowExt};
     use wasm_bindgen_futures::JsFuture;
+    use wasm_streams::ReadableStream;
     use web_sys::{Request, RequestInit, RequestMode, Response};
 
+    use abstutil::prettyprint_usize;
     use geom::Duration;
     use widgetry::{Line, Panel, State, Text, UpdateType};
 
@@ -196,6 +199,11 @@ mod wasm_loader {
         panel: Panel,
         started: Instant,
         url: String,
+
+        total_bytes: Option<usize>,
+        read_bytes: Option<usize>,
+        got_total_bytes: oneshot::Receiver<usize>,
+        got_read_bytes: mpsc::Receiver<usize>,
     }
 
     impl<A: AppLike + 'static, T: 'static + DeserializeOwned> FileLoader<A, T> {
@@ -224,6 +232,8 @@ mod wasm_loader {
             // Make the HTTP request nonblockingly. When the response is received, send it through
             // the channel.
             let (tx, rx) = oneshot::channel();
+            let (tx_total_bytes, got_total_bytes) = oneshot::channel();
+            let (mut tx_read_bytes, got_read_bytes) = mpsc::channel(10);
             let url_copy = url.clone();
             debug!("Loading {}", url_copy);
             wasm_bindgen_futures::spawn_local(async move {
@@ -237,9 +247,34 @@ mod wasm_loader {
                     Ok(resp_value) => {
                         let resp: Response = resp_value.dyn_into().unwrap();
                         if resp.ok() {
-                            let buf = JsFuture::from(resp.array_buffer().unwrap()).await.unwrap();
-                            let array = js_sys::Uint8Array::new(&buf);
-                            tx.send(Ok(array.to_vec())).unwrap();
+                            let total_bytes = resp
+                                .headers()
+                                .get("Content-Length")
+                                .unwrap()
+                                .unwrap()
+                                .parse::<usize>()
+                                .unwrap();
+                            tx_total_bytes.send(total_bytes).unwrap();
+
+                            let raw_body = resp.body().unwrap_throw();
+                            let body = ReadableStream::from_raw(raw_body.dyn_into().unwrap_throw());
+                            let mut stream = body.into_stream();
+                            // TODO errors???
+                            let mut buffer = Vec::new();
+                            while let Some(Ok(chunk)) = stream.next().await {
+                                let array = js_sys::Uint8Array::new(&chunk);
+                                info!("got chunk len {}", array.byte_length());
+                                tx_read_bytes
+                                    .try_send(array.byte_length() as usize)
+                                    .unwrap();
+                                // TODO Ahh copying!
+                                buffer.extend(array.to_vec());
+                            }
+                            tx.send(Ok(buffer)).unwrap();
+
+                        /*let buf = JsFuture::from(resp.array_buffer().unwrap()).await.unwrap();
+                        let array = js_sys::Uint8Array::new(&buf);
+                        tx.send(Ok(array.to_vec())).unwrap();*/
                         } else {
                             let status = resp.status();
                             let err = resp.status_text();
@@ -257,6 +292,10 @@ mod wasm_loader {
                 on_load: Some(on_load),
                 panel: ctx.make_loading_screen(Text::from(Line(format!("Loading {}...", url)))),
                 started: Instant::now(),
+                total_bytes: None,
+                read_bytes: None,
+                got_total_bytes,
+                got_read_bytes,
                 url,
             })
         }
@@ -264,6 +303,15 @@ mod wasm_loader {
 
     impl<A: AppLike + 'static, T: 'static + DeserializeOwned> State<A> for FileLoader<A, T> {
         fn event(&mut self, ctx: &mut EventCtx, app: &mut A) -> Transition<A> {
+            if self.total_bytes.is_none() {
+                if let Some(total) = self.got_total_bytes.try_recv().unwrap() {
+                    self.total_bytes = Some(total);
+                }
+            }
+            if let Some(read) = self.got_read_bytes.try_next().ok().and_then(|value| value) {
+                self.read_bytes = Some(read);
+            }
+
             if let Some(maybe_resp) = self.response.try_recv().unwrap() {
                 // TODO We stop drawing and start blocking at this point. It can take a
                 // while. Any way to make it still be nonblockingish? Maybe put some of the work
@@ -286,13 +334,22 @@ mod wasm_loader {
                 return (self.on_load.take().unwrap())(ctx, app, &mut timer, result);
             }
 
-            self.panel = ctx.make_loading_screen(Text::from_multiline(vec![
+            let mut lines = vec![
                 Line(format!("Loading {}...", self.url)),
                 Line(format!(
                     "Time spent: {}",
                     Duration::realtime_elapsed(self.started)
                 )),
-            ]));
+            ];
+            if let Some(total) = self.total_bytes {
+                let read = self.read_bytes.unwrap_or(0);
+                lines.push(Line(format!(
+                    "Read {} / {} bytes",
+                    prettyprint_usize(read),
+                    prettyprint_usize(total)
+                )));
+            }
+            self.panel = ctx.make_loading_screen(Text::from_multiline(lines));
 
             // Until the response is received, just ask winit to regularly call event(), so we can
             // keep polling the channel.

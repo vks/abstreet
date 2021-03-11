@@ -6,7 +6,7 @@ edition = "2018"
 
 [features]
 native = ["reqwest", "tokio"]
-wasm = ["js-sys", "wasm-bindgen", "wasm-bindgen-futures", "web-sys"]
+wasm = ["js-sys", "wasm-bindgen", "wasm-bindgen-futures", "wasm-streams", "web-sys"]
 # A marker to use a named release from S3 instead of dev for updating files
 release_s3 = []
 
@@ -32,6 +32,7 @@ sim = { path = "../sim" }
 tokio = { version ="1.1.1", features=["rt"], optional = true }
 wasm-bindgen = { version = "0.2.70", optional = true }
 wasm-bindgen-futures = { version = "0.4.20", optional = true }
+wasm-streams = { version = "0.1.2", optional = true }
 webbrowser = "0.5.5"
 widgetry = { path = "../widgetry" }
 
@@ -41,6 +42,7 @@ optional = true
 features = [
   "Headers",
   "History",
+  "ReadableStream",
   "Request",
   "RequestInit",
   "RequestMode",
