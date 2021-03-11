@@ -20,10 +20,10 @@ use crate::tools::PopupMsg;
 use crate::AppLike;
 
 #[cfg(not(target_arch = "wasm32"))]
-pub use native_loader::{FileLoader, RawFileLoader};
+pub use native_loader::FileLoader;
 
 #[cfg(target_arch = "wasm32")]
-pub use wasm_loader::{FileLoader, RawFileLoader};
+pub use wasm_loader::FileLoader;
 
 pub struct MapLoader;
 
@@ -43,10 +43,11 @@ impl MapLoader {
         // TODO Generalize this more, maybe with some kind of country code -> font config
         let chinese_font = "NotoSerifCJKtc-Regular.otf";
         if name.city.country == "tw" && !ctx.is_font_loaded(chinese_font) {
-            return RawFileLoader::<A>::new(
+            return FileLoader::<A, Vec<u8>>::new(
                 ctx,
                 abstio::path(format!("system/extra_fonts/{}", chinese_font)),
-                Box::new(move |ctx, app, bytes| match bytes {
+                Box::new(|_, bytes, _| Ok(bytes)),
+                Box::new(move |ctx, app, _, bytes| match bytes {
                     Ok(bytes) => {
                         ctx.load_font(chinese_font, bytes);
                         Transition::Replace(MapLoader::new(ctx, app, name, on_load))
@@ -60,9 +61,10 @@ impl MapLoader {
             );
         }
 
-        FileLoader::<A, map_model::Map>::new(
+        FileLoader::new(
             ctx,
             name.path(),
+            FileLoader::<A, map_model::Map>::make_deserializer(),
             Box::new(move |ctx, app, timer, map| {
                 match map {
                     Ok(mut map) => {
@@ -99,11 +101,14 @@ impl<A: AppLike + 'static> State<A> for MapAlreadyLoaded<A> {
 
 #[cfg(not(target_arch = "wasm32"))]
 mod native_loader {
+    use std::io::Read;
+
     use super::*;
 
     // This loads a JSON or bincoded file, then deserializes it
     pub struct FileLoader<A: AppLike, T> {
         path: String,
+        parser: Box<dyn Fn(&str, Vec<u8>, &mut Timer) -> Result<T>>,
         // Wrapped in an Option just to make calling from event() work. Technically this is unsafe
         // if a caller fails to pop the FileLoader state in their transitions!
         on_load:
@@ -114,11 +119,23 @@ mod native_loader {
         pub fn new(
             _: &mut EventCtx,
             path: String,
+            parser: Box<dyn Fn(&str, Vec<u8>, &mut Timer) -> Result<T>>,
             on_load: Box<dyn FnOnce(&mut EventCtx, &mut A, &mut Timer, Result<T>) -> Transition<A>>,
         ) -> Box<dyn State<A>> {
             Box::new(FileLoader {
                 path,
+                parser: parser,
                 on_load: Some(on_load),
+            })
+        }
+
+        pub fn make_deserializer() -> Box<dyn Fn(&str, Vec<u8>, &mut Timer) -> Result<T>> {
+            Box::new(|path, bytes, _| {
+                if path.ends_with(".bin") {
+                    abstutil::from_binary(&bytes)
+                } else {
+                    abstutil::from_json(&bytes)
+                }
             })
         }
     }
@@ -127,42 +144,20 @@ mod native_loader {
         fn event(&mut self, ctx: &mut EventCtx, app: &mut A) -> Transition<A> {
             debug!("Loading {}", self.path);
             ctx.loading_screen(format!("load {}", self.path), |ctx, timer| {
-                let file = abstio::read_object(self.path.clone(), timer);
-                (self.on_load.take().unwrap())(ctx, app, timer, file)
+                let mut buffer = Vec::new();
+                info!("before we start");
+                let bytes = timer.read_file(&self.path).and_then(|_| {
+                    info!("ok started the read");
+                    timer
+                        .read_to_end(&mut buffer)
+                        .map(|_| buffer)
+                        .map_err(|err| err.into())
+                });
+                info!("and got bytes");
+                //let bytes = abstio::slurp_file(&self.path);
+                let obj = bytes.and_then(|bytes| (self.parser)(&self.path, bytes, timer));
+                (self.on_load.take().unwrap())(ctx, app, timer, obj)
             })
-        }
-
-        fn draw(&self, g: &mut GfxCtx, _: &A) {
-            g.clear(Color::BLACK);
-        }
-    }
-
-    // TODO Ideally merge with FileLoader
-    pub struct RawFileLoader<A: AppLike> {
-        path: String,
-        // Wrapped in an Option just to make calling from event() work. Technically this is unsafe
-        // if a caller fails to pop the FileLoader state in their transitions!
-        on_load: Option<Box<dyn FnOnce(&mut EventCtx, &mut A, Result<Vec<u8>>) -> Transition<A>>>,
-    }
-
-    impl<A: AppLike + 'static> RawFileLoader<A> {
-        pub fn new(
-            _: &mut EventCtx,
-            path: String,
-            on_load: Box<dyn FnOnce(&mut EventCtx, &mut A, Result<Vec<u8>>) -> Transition<A>>,
-        ) -> Box<dyn State<A>> {
-            Box::new(RawFileLoader {
-                path,
-                on_load: Some(on_load),
-            })
-        }
-    }
-
-    impl<A: AppLike + 'static> State<A> for RawFileLoader<A> {
-        fn event(&mut self, ctx: &mut EventCtx, app: &mut A) -> Transition<A> {
-            debug!("Loading {}", self.path);
-            let bytes = abstio::slurp_file(&self.path);
-            (self.on_load.take().unwrap())(ctx, app, bytes)
         }
 
         fn draw(&self, g: &mut GfxCtx, _: &A) {

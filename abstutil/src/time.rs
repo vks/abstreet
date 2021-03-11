@@ -483,10 +483,10 @@ impl<'a> Read for Timer<'a> {
         let mut file = match self.stack.last_mut() {
             Some(StackEntry::File(ref mut f)) => f,
             _ => {
-                return Err(std::io::Error::new(
-                    ErrorKind::Other,
-                    "trying to read when Timer doesn't have file on the stack?!",
-                ));
+                // Sometimes this could represent some bizarre error, when we're trying to read
+                // from the timer when we don't have a file on the stack. But when using with
+                // read_to_end, this is expected -- just indicate we're done here.
+                return Ok(0);
             }
         };
 

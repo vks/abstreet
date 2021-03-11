@@ -38,12 +38,13 @@ impl<A: AppLike + 'static> CityPicker<A> {
         on_load: Box<dyn FnOnce(&mut EventCtx, &mut A) -> Transition<A>>,
         city_name: CityName,
     ) -> Box<dyn State<A>> {
-        FileLoader::<A, City>::new(
+        FileLoader::new(
             ctx,
             abstio::path(format!(
                 "system/{}/{}/city.bin",
                 city_name.country, city_name.city
             )),
+            FileLoader::<A, City>::make_deserializer(),
             Box::new(move |ctx, app, _, maybe_city| {
                 let mut batch = GeomBatch::new();
                 let mut districts = Vec::new();

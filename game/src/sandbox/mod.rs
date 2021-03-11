@@ -723,9 +723,10 @@ impl State<App> for SandboxLoader {
                                 }
                             }
 
-                            return Transition::Push(FileLoader::<App, Scenario>::new(
+                            return Transition::Push(FileLoader::new(
                                 ctx,
                                 path,
+                                FileLoader::<App, Scenario>::make_deserializer(),
                                 Box::new(|_, _, _, scenario| {
                                     // TODO Handle corrupt files
                                     let scenario = scenario.unwrap();
@@ -777,9 +778,10 @@ impl State<App> for SandboxLoader {
                         continue;
                     }
 
-                    return Transition::Push(FileLoader::<App, Analytics>::new(
+                    return Transition::Push(FileLoader::new(
                         ctx,
                         abstio::path_prebaked_results(app.primary.map.get_name(), &scenario_name),
+                        FileLoader::<App, Analytics>::make_deserializer(),
                         Box::new(move |_, _, _, prebaked| {
                             Transition::Multi(vec![
                                 Transition::Pop,
