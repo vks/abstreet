@@ -8,7 +8,7 @@ use serde::{Deserialize, Deserializer};
 use geom::{Duration, LonLat, Pt2D};
 use map_model::{
     osm, ControlTrafficSignal, DirectedRoadID, IntersectionID, Map, Movement, MovementID, Stage,
-    StageType,
+    StageType, TurnType,
 };
 
 /// This imports timing.csv from https://github.com/asu-trans-ai-lab/Vol2Timing. It operates in a
@@ -61,11 +61,18 @@ pub fn import(map: &Map, i: IntersectionID, path: &str) -> Result<ControlTraffic
                 rec.green_time
             );
         }
+        let turn_type = match rec.movement_str.chars().last() {
+            Some('T') => TurnType::Straight,
+            Some('L') => TurnType::Left,
+            Some('R') => TurnType::Right,
+            x => bail!("Weird movement_str {:?}", x),
+        };
 
-        let mvmnt = match snapper.get_mvmnt((
+        let mvmnt = match snapper.get_mvmnt(
             rec.geometry.0.to_pt(map.get_gps_bounds()),
             rec.geometry.1.to_pt(map.get_gps_bounds()),
-        )) {
+            turn_type,
+        ) {
             Ok(x) => x,
             Err(err) => {
                 error!(
@@ -75,8 +82,15 @@ pub fn import(map: &Map, i: IntersectionID, path: &str) -> Result<ControlTraffic
                 continue;
             }
         };
-        // Through movements (EBT = eastbound through, for example) are implicitly protected
-        if rec.protection == "protected" || rec.movement_str.ends_with("T") {
+        if turn_type != snapper.movements[&mvmnt].turn_type {
+            warn!(
+                "On stage {}, a {} mapped to a {:?}",
+                rec.stage, rec.movement_str, snapper.movements[&mvmnt].turn_type
+            );
+        }
+
+        // Through movements are implicitly protected
+        if rec.protection == "protected" || turn_type == TurnType::Straight {
             stage.protected_movements.insert(mvmnt);
         } else {
             stage.yield_movements.insert(mvmnt);
@@ -182,25 +196,46 @@ impl Snapper {
         })
     }
 
-    fn get_mvmnt(&self, pair: (Pt2D, Pt2D)) -> Result<MovementID> {
-        let from = self
+    fn get_mvmnt(&self, from_pt: Pt2D, to_pt: Pt2D, turn_type: TurnType) -> Result<MovementID> {
+        // Filter movements by turn_type
+        let preferred_movements: BTreeSet<MovementID> = self
+            .movements
+            .iter()
+            .filter_map(|(id, mvmnt)| {
+                if mvmnt.turn_type == turn_type {
+                    Some(*id)
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        // Consider every possible movement between incoming and outgoing roads
+        let ((from, _), (to, _)) = self
             .roads_incoming
             .iter()
-            .min_by_key(|(_, pt)| pt.dist_to(pair.0))
-            .unwrap()
-            .0;
-        let to = self
-            .roads_outgoing
-            .iter()
-            .min_by_key(|(_, pt)| pt.dist_to(pair.1))
-            .unwrap()
-            .0;
+            .zip(self.roads_outgoing.iter())
+            .min_by_key(|((id1, pt1), (id2, pt2))| {
+                let preferred = preferred_movements.contains(&MovementID {
+                    from: *id1,
+                    to: *id2,
+                    parent: self.i,
+                    crosswalk: false,
+                });
+                assert!(false < true);
+                let from_dist = pt1.dist_to(from_pt);
+                let to_dist = pt2.dist_to(to_pt);
+                // Lexicographically choose preferred_movements, even if distance to individual
+                // endpoints is greater
+                (!preferred, from_dist + to_dist)
+            })
+            .unwrap();
         if from == to {
             bail!("loop on {}", from);
         }
         let mvmnt = MovementID {
-            from,
-            to,
+            from: *from,
+            to: *to,
             parent: self.i,
             crosswalk: false,
         };
