@@ -147,13 +147,15 @@ fn safety_matrix(
                     Line("with no changes in number of problems encountered")
                 } else if problems1 < 0 {
                     Line(format!(
-                        "with between {} and {} less problems encountered",
-                        -problems2, -problems1
+                        "with between {} and {} fewer problems encountered",
+                        -problems2 + 1,
+                        -problems1
                     ))
                 } else {
                     Line(format!(
                         "with between {} and {} more problems encountered",
-                        problems1, problems2
+                        problems1,
+                        problems2 - 1
                     ))
                 });
                 txt.add_line(Line(format!("Count: {} trips", prettyprint_usize(count))));
