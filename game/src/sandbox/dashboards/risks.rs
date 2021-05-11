@@ -329,14 +329,52 @@ fn bucketize_duration(num_buckets: usize, pts: &Vec<(Duration, isize)>) -> Vec<D
     mins.into_iter().map(|x| Duration::minutes(x)).collect()
 }
 
-fn bucketize_isizes(num_buckets: usize, pts: &Vec<(Duration, isize)>) -> Vec<isize> {
-    let min = pts.iter().min_by_key(|(_, cnt)| *cnt).unwrap().1;
-    let max = pts.iter().max_by_key(|(_, cnt)| *cnt).unwrap().1;
-    // TODO Rounding is wrong. We need to make sure to cover the min/max range...
-    let step_size = ((max - min).abs() as f64) / (num_buckets as f64);
-    let mut buckets = Vec::new();
-    for i in 0..num_buckets {
-        buckets.push(min + ((i as f64) * step_size) as isize);
+fn bucketize_isizes(max_buckets: usize, pts: &Vec<(Duration, isize)>) -> Vec<isize> {
+    // uniformly sized integer buckets
+    let max = pts.iter().max_by_key(|(_, cnt)| cnt.abs()).unwrap().1.abs();
+
+    debug_assert!(
+        max_buckets % 2 == 1,
+        "num_buckets must be odd to have a symmetrical number of buckets around axis"
+    );
+    debug_assert!(max_buckets >= 3, "num_buckets must be at least 3");
+
+    let positive_buckets = (max_buckets - 1) / 2;
+    let bucket_size = (max as f64 / positive_buckets as f64).ceil() as isize;
+
+    // we start with a 0-based bucket, and build the other buckets out from that.
+    let mut buckets = vec![0];
+
+    for i in 0..=positive_buckets {
+        // the first positive bucket starts at `1`, to ensure that the 0 bucket stands alone
+        buckets.push(1 + (i as isize) * bucket_size);
     }
+    for i in 1..=positive_buckets {
+        buckets.push(-(i as isize) * bucket_size);
+    }
+    buckets.sort();
+    debug!("buckets: {:?}", buckets);
+
     buckets
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_bucketize_isizes() {
+        let buckets = bucketize_isizes(
+            5,
+            &vec![
+                (Duration::minutes(3), -3),
+                (Duration::minutes(3), -3),
+                (Duration::minutes(3), -1),
+                (Duration::minutes(3), 2),
+                (Duration::minutes(3), 5),
+            ],
+        );
+
+        assert_eq!(buckets, vec![-6, -3, 0, 1, 4])
+    }
 }
