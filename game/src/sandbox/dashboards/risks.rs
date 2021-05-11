@@ -6,8 +6,8 @@ use geom::{Duration, Polygon, Pt2D, Time};
 use map_gui::tools::ColorScale;
 use sim::{Problem, TripMode};
 use widgetry::{
-    DrawWithTooltips, EventCtx, GeomBatch, GfxCtx, Line, Outcome, Panel, State, Text, TextExt,
-    Toggle, Widget,
+    Color, DrawWithTooltips, EventCtx, GeomBatch, GfxCtx, Line, Outcome, Panel, State, Text,
+    TextExt, Toggle, Widget,
 };
 
 use crate::app::{App, Transition};
@@ -103,6 +103,10 @@ impl State<App> for RiskSummaries {
     }
 }
 
+lazy_static::lazy_static! {
+    static ref CLEAR_COLOR_SCALE: ColorScale = ColorScale(vec![Color::CLEAR, Color::CLEAR]);
+}
+
 fn safety_matrix(
     ctx: &mut EventCtx,
     app: &App,
@@ -129,7 +133,9 @@ fn safety_matrix(
             total_width: 500.0,
             total_height: 500.0,
             color_scale_for_bucket: Box::new(|app, _, n| {
-                if n <= 0 {
+                if n == 0 {
+                    &CLEAR_COLOR_SCALE
+                } else if n < 0 {
                     &app.cs.good_to_bad_green
                 } else {
                     &app.cs.good_to_bad_red
