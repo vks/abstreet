@@ -35,7 +35,7 @@ impl DashTab {
         let mut choices = vec![
             Choice::new("Trip Table", DashTab::TripTable),
             Choice::new("Trip Summaries", DashTab::TripSummaries),
-            Choice::new("Risk exposure", DashTab::RiskSummaries),
+            Choice::new("Risk Exposure", DashTab::RiskSummaries),
             Choice::new("Parking Overhead", DashTab::ParkingOverhead),
             Choice::new("Active Traffic", DashTab::ActiveTraffic),
             Choice::new("Transit Routes", DashTab::TransitRoutes),
