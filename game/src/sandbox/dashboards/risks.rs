@@ -118,7 +118,7 @@ fn safety_matrix(
         return Widget::nothing();
     }
 
-    let num_buckets = 10;
+    let num_buckets = 7;
     let mut matrix = Matrix::new(
         bucketize_duration(num_buckets, &points),
         bucketize_isizes(num_buckets, &points),
