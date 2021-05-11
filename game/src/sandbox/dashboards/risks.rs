@@ -277,10 +277,13 @@ impl<X: Copy + PartialOrd + Display, Y: Copy + PartialOrd + Display> Matrix<X, Y
             for y in 0..self.buckets_y.len() - 1 {
                 let count = self.counts[self.idx(x, y)];
                 // TODO Different colors for better/worse? Or are we just showing density?
-                let density_pct = (count as f64) / max_count;
-                let color =
+                let color = if count == 0 {
+                    widgetry::Color::CLEAR
+                } else {
+                    let density_pct = (count as f64) / max_count;
                     (opts.color_scale_for_bucket)(app, self.buckets_x[x], self.buckets_y[y])
-                        .eval(density_pct);
+                        .eval(density_pct)
+                };
                 let x1 = cell_width * (x as f64);
                 let y1 = cell_height * (y as f64);
                 let rect = cell.clone().translate(x1, y1);
