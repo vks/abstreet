@@ -142,23 +142,36 @@ fn safety_matrix(
                 }
             }),
             tooltip_for_bucket: Box::new(|(t1, t2), (problems1, problems2), count| {
-                let mut txt = Text::from(Line(format!("Trips between {} and {}", t1, t2)));
+                let mut txt = Text::from(if count == 1 {
+                    format!(
+                        "{} trip between {} and {}",
+                        prettyprint_usize(count),
+                        t1,
+                        t2
+                    )
+                } else {
+                    format!(
+                        "{} trips between {} and {}",
+                        prettyprint_usize(count),
+                        t1,
+                        t2
+                    )
+                });
                 txt.add_line(if problems1 == 0 {
-                    Line("with no changes in number of problems encountered")
+                    Line("had no change in the number of problems encountered.")
                 } else if problems1 < 0 {
                     Line(format!(
-                        "with between {} and {} fewer problems encountered",
+                        "encountered {}-{} fewer problems.",
                         -problems2 + 1,
                         -problems1
                     ))
                 } else {
                     Line(format!(
-                        "with between {} and {} more problems encountered",
+                        "encountered {}-{} more problems.",
                         problems1,
                         problems2 - 1
                     ))
                 });
-                txt.add_line(Line(format!("Count: {} trips", prettyprint_usize(count))));
                 txt
             }),
         },
