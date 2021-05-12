@@ -120,7 +120,7 @@ fn safety_matrix(
 
     let num_buckets = 7;
     let mut matrix = Matrix::new(
-        bucketize_duration(num_buckets, &points),
+        bucketize_duration(&points),
         bucketize_isizes(num_buckets, &points),
     );
     for (x, y) in points {
@@ -130,8 +130,8 @@ fn safety_matrix(
         ctx,
         app,
         MatrixOptions {
-            total_width: 500.0,
-            total_height: 500.0,
+            total_width: 800.0,
+            total_height: 800.0,
             color_scale_for_bucket: Box::new(|app, _, n| {
                 if n == 0 {
                     &CLEAR_COLOR_SCALE
@@ -323,10 +323,16 @@ struct MatrixOptions<X, Y> {
     tooltip_for_bucket: Box<dyn Fn((X, X), (Y, Y), usize) -> Text>,
 }
 
-fn bucketize_duration(num_buckets: usize, pts: &Vec<(Duration, isize)>) -> Vec<Duration> {
+fn bucketize_duration(pts: &Vec<(Duration, isize)>) -> Vec<Duration> {
     let max = pts.iter().max_by_key(|(dt, _)| *dt).unwrap().0;
-    let (_, mins) = max.make_intervals_for_max(num_buckets);
-    mins.into_iter().map(|x| Duration::minutes(x)).collect()
+    let mut prev = Duration::minutes(5);
+    let mut durations = vec![Duration::ZERO, prev];
+    // Each subsequent bucket is twice as long
+    while prev < max {
+        prev = prev * 2.0;
+        durations.push(prev);
+    }
+    durations
 }
 
 fn bucketize_isizes(max_buckets: usize, pts: &Vec<(Duration, isize)>) -> Vec<isize> {
