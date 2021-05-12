@@ -310,9 +310,13 @@ impl<X: Copy + PartialOrd + Display, Y: Copy + PartialOrd + Display> Matrix<X, Y
                 let rect = cell.clone().translate(x1, y1);
                 batch.push(color, rect.clone());
                 batch.append(
-                    Text::from(Line(prettyprint_usize(count)))
-                        .render(ctx)
-                        .centered_on(Pt2D::new(x1 + cell_width / 2.0, y1 + cell_height / 2.0)),
+                    Text::from(if count == 0 && y + 1 == self.buckets_y.len() / 2 {
+                        "-".to_string()
+                    } else {
+                        prettyprint_usize(count)
+                    })
+                    .render(ctx)
+                    .centered_on(Pt2D::new(x1 + cell_width / 2.0, y1 + cell_height / 2.0)),
                 );
                 tooltips.push((
                     rect,
